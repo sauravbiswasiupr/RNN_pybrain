@@ -1,0 +1,106 @@
+#!/usr/bin/python
+'''Script to create a deep MLP using 3 hidden layers , one input and one output layer'''
+from pybrain.structure import FeedForwardNetwork
+from pybrain.structure import LinearLayer,SigmoidLayer,SoftmaxLayer,FullConnection
+from numpy import * 
+import cPickle 
+from pybrain.datasets import ClassificationDataSet
+from pybrain.utilities import percentError 
+from pybrain.supervised.trainers import BackpropTrainer
+from pylab import * 
+#from pybrain.tools.neuralnets import saveTrainingCurve,saveNetwork
+
+def create_dataset(data_x,data_y): 
+    dataset=ClassificationDataSet(784,1,nb_classes=10)
+    length=data_x.shape[0] 
+    for i  in range(length):
+       img = data_x[i]
+       target=data_y[i]
+       dataset.addSample(img,[target])
+    return dataset
+
+if __name__=="__main__": 
+    #create the network 
+    n=FeedForwardNetwork() 
+    hidden_layers=[] 
+    for i in range(3):
+          hidden_layers.append(SigmoidLayer(25))
+    inLayer=LinearLayer(784)
+    outLayer=SoftmaxLayer(10)
+    
+    n.addInputModule(inLayer)
+    for i in range(3): 
+       n.addModule(hidden_layers[i]) 
+    n.addOutputModule(outLayer) 
+  
+    #create the connections and add them 
+    in_to_hidden_0=FullConnection(inLayer,hidden_layers[0])
+    hidden_0_to_hidden_1 = FullConnection(hidden_layers[0],hidden_layers[1])
+    hidden_1_to_hidden_2 = FullConnection(hidden_layers[1],hidden_layers[2])
+    hidden_2_to_out = FullConnection(hidden_layers[2],outLayer)
+
+    n.addConnection(in_to_hidden_0) 
+    n.addConnection(hidden_0_to_hidden_1)
+    n.addConnection(hidden_1_to_hidden_2)
+    n.addConnection(hidden_2_to_out) 
+    n.sortModules()
+    print "Network : "  , n 
+    f = open("/home/saurav/Desktop/CVPR_work/ocropus/ocropy/mnist.pkl","rb")
+    train,valid,test=cPickle.load(f)
+    train_x,train_y = train
+    valid_x,valid_y=valid
+    test_x,test_y = test
+
+    trndata=create_dataset(train_x ,train_y)
+    validdata=create_dataset(valid_x,valid_y)
+    testdata=create_dataset(test_x,test_y)
+
+    ####toy example#####
+    trndata._convertToOneOfMany()
+    testdata._convertToOneOfMany()
+    validdata._convertToOneOfMany() 
+    ## data basically divided up into multi vector representations 
+    #create the trainer that uses the backprop algo 
+    trainer=BackpropTrainer(n,dataset=trndata,momentum=0.1,verbose=True)
+    numEpochs=1000 #setup for maxEpochs to run if early stopping condition is not met
+    trnerrors=[]
+    validerrors=[]
+    count=0
+    bestValidError=float("inf")
+    for epoch in range(numEpochs): 
+        trainer.trainEpochs(1)
+        trnerror=percentError(trainer.testOnClassData(),trndata['class'])
+        validerror=percentError(trainer.testOnClassData(dataset=validdata),validdata['class'])
+        #if validation error after n epochs doesn't decrease we stop the iterations
+        trnerrors.append(trnerror)
+        validerrors.append(validerror)
+        if epoch==0:  
+            bestValidError=validerror
+            count=count+1
+        if validerror < bestValidError:
+            count=0 
+            bestValidError=validerror
+            continue 
+        if count>30:
+           print "30 Error tests without decrease in valid error. Stopping !!" 
+           break 
+        count=count+1 
+        
+    #compute the test error
+    tsterror = percentError(trainer.testOnClassData(dataset=testdata),testdata['class'])
+    print "Test Error is : %5.2f%%" %(tsterror)
+    #print "Saving training curves and network to disk"
+    #saveTrainingCurve('training_curve.csv')
+    #saveNetwork('deep_MLP.net')
+    figure()
+    subplot(211)
+    xlabel("Epochs")
+    ylabel("training errors % ")
+    plot(trnerrors)
+    subplot(212)
+    xlabel("Epochs")
+    ylabel("validation Errors")
+    plot(validerrors,'g')
+    show()
+    
+    
